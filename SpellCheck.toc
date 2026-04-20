@@ -1,0 +1,9 @@
+## Interface: 20505
+## Title: SpellCheck
+## Notes: Checks action bars for downranked and unbound spells.
+## Author: Gemini
+## Version: 1.0
+## SavedVariables: SpellCheckDB
+
+SpellCheck.lua
+SpellCheckUI.lua
