@@ -2,7 +2,7 @@
 ## Title: SpellCheck
 ## Notes: Checks action bars for downranked and unbound spells.
 ## Author: Gemini
-## Version: 1.0
+## Version: 1.0.1
 ## SavedVariables: SpellCheckDB
 
 SpellCheck.lua

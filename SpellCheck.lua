@@ -8,6 +8,7 @@ frame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 frame:RegisterEvent("UPDATE_STEALTH")
+frame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 
 SpellCheck.highestSpells = {}
 SpellCheck.downrankedSpells = {}
@@ -134,7 +135,7 @@ function SpellCheck:ScanActionBars()
     
     for sName, info in pairs(self.highestSpells) do
         if not boundSpellIDs[info.spellId] then
-            local isUsable, notEnoughMana = IsUsableSpell(info.index, BOOKTYPE_SPELL)
+            local isUsable, notEnoughMana = IsUsableSpell(info.spellId)
             if isUsable or notEnoughMana or IsReagentSpell(sName) then
                 table.insert(self.unboundSpells, info)
             end
@@ -173,10 +174,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
             SpellCheck:ScanActionBars()
             self:UnregisterEvent("ADDON_LOADED")
         end
-    elseif event == "SPELLS_CHANGED" then
+    elseif event == "SPELLS_CHANGED" or event == "PLAYER_ENTERING_WORLD" or event == "ACTIVE_TALENT_GROUP_CHANGED" then
         SpellCheck:ScanSpellbook()
         SpellCheck:ScanActionBars()
-    elseif event == "ACTIONBAR_SLOT_CHANGED" or event == "PLAYER_ENTERING_WORLD" or event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_STEALTH" then
+    elseif event == "ACTIONBAR_SLOT_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_STEALTH" then
         SpellCheck:ScanActionBars()
     end
 end)
