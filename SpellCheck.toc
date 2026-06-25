@@ -1,8 +1,8 @@
-## Interface: 11508
+## Interface: 11508, 20505
 ## Title: SpellCheck
 ## Notes: Checks action bars for downranked and unbound spells.
 ## Author: Gemini
-## Version: 1.0.2
+## Version: 1.0.3
 ## SavedVariables: SpellCheckDB
 
 SpellCheck.lua
