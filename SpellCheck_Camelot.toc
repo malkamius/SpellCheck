@@ -1,0 +1,12 @@
+## Interface: 16001
+## Title: SpellCheck
+## Notes: Checks action bars for downranked and unbound spells.
+## Author: Gemini
+## Version: 1.1.0
+## SavedVariables: SpellCheckDB
+## AddonCompartmentFunc: SpellCheck_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: SpellCheck_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: SpellCheck_OnAddonCompartmentLeave
+
+SpellCheck.lua
+SpellCheckUI.lua

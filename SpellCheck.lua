@@ -1,6 +1,65 @@
 local addonName, addonTable = ...
 SpellCheck = addonTable
 
+local BOOKTYPE_SPELL = _G.BOOKTYPE_SPELL or "spell"
+
+local function GetSpellInfoCompat(spellIdentifier)
+    if not spellIdentifier then return nil, nil, nil end
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spellIdentifier)
+        if info then
+            local icon = info.iconID or (C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellIdentifier))
+            return info.name, nil, icon, info.castTime, info.minRange, info.maxRange, info.spellID, info.originalIconID
+        end
+        return nil
+    elseif _G.GetSpellInfo then
+        return _G.GetSpellInfo(spellIdentifier)
+    end
+    return nil
+end
+
+local function GetSpellSubtextCompat(spellIdentifier)
+    if not spellIdentifier then return "" end
+    if C_Spell and C_Spell.GetSpellSubtext then
+        return C_Spell.GetSpellSubtext(spellIdentifier) or ""
+    elseif _G.GetSpellSubtext then
+        return _G.GetSpellSubtext(spellIdentifier) or ""
+    end
+    return ""
+end
+
+local function IsSpellUsableCompat(spellIdentifier)
+    if not spellIdentifier then return false, false end
+    if C_Spell and C_Spell.IsSpellUsable then
+        local res1, res2 = C_Spell.IsSpellUsable(spellIdentifier)
+        if type(res1) == "table" then
+            return res1.isUsable or false, (res1.notEnoughMana or res1.insufficientPower) or false
+        end
+        return res1 or false, res2 or false
+    elseif _G.IsUsableSpell then
+        return _G.IsUsableSpell(spellIdentifier)
+    end
+    return true, false
+end
+
+local function PickupSpellCompat(index, spellId)
+    if C_Spell and C_Spell.PickupSpell and spellId then
+        C_Spell.PickupSpell(spellId)
+    elseif C_SpellBook and C_SpellBook.PickupSpellBookItem and index then
+        local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+        C_SpellBook.PickupSpellBookItem(index, bank)
+    elseif _G.PickupSpellBookItem and index then
+        _G.PickupSpellBookItem(index, BOOKTYPE_SPELL)
+    elseif _G.PickupSpell and spellId then
+        _G.PickupSpell(spellId)
+    end
+end
+
+SpellCheck.GetSpellInfo = GetSpellInfoCompat
+SpellCheck.GetSpellSubtext = GetSpellSubtextCompat
+SpellCheck.IsSpellUsable = IsSpellUsableCompat
+SpellCheck.PickupSpell = PickupSpellCompat
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("SPELLS_CHANGED")
@@ -9,6 +68,13 @@ frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 frame:RegisterEvent("UPDATE_STEALTH")
 frame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+
+if frame.RegisterEvent then
+    pcall(function() frame:RegisterEvent("PLAYER_TALENT_UPDATE") end)
+    pcall(function() frame:RegisterEvent("TRAIT_CONFIG_UPDATED") end)
+    pcall(function() frame:RegisterEvent("ACTIONBAR_PAGE_CHANGED") end)
+    pcall(function() frame:RegisterEvent("UPDATE_BONUS_ACTIONBAR") end)
+end
 
 SpellCheck.highestSpells = {}
 SpellCheck.downrankedSpells = {}
@@ -64,33 +130,83 @@ local function ParseRank(rankStr)
 end
 
 local function Trim(s)
-    return s:match("^%s*(.-)%s*$")
+    if not s then return "" end
+    return s:match("^%s*(.-)%s*$") or ""
 end
 
 function SpellCheck:ScanSpellbook()
     wipe(self.highestSpells)
-    for tab = 1, GetNumSpellTabs() do
-        local _, _, offset, numSlots = GetSpellTabInfo(tab)
-        for i = offset + 1, offset + numSlots do
-            local sName, sRank = GetSpellBookItemName(i, BOOKTYPE_SPELL)
-            if sName then
-                local sType, sId = GetSpellBookItemInfo(i, BOOKTYPE_SPELL)
-                if sType == "SPELL" and not IsPassiveSpell(i, BOOKTYPE_SPELL) then
-                    -- Strip any "(Rank X)" suffix from the name if the API is including it
-                    local cleanName = Trim(sName:gsub("%(Rank %d+%)", ""))
+    
+    if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
+        local numSkillLines = C_SpellBook.GetNumSpellBookSkillLines()
+        local spellBank = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
+        
+        for skillLineIndex = 1, numSkillLines do
+            local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(skillLineIndex)
+            if skillLineInfo and not skillLineInfo.shouldHide and skillLineInfo.numSpellBookItems and skillLineInfo.numSpellBookItems > 0 then
+                local offset = skillLineInfo.itemIndexOffset or 0
+                for i = 1, skillLineInfo.numSpellBookItems do
+                    local spellIndex = offset + i
+                    local itemType, actionID, spellID = C_SpellBook.GetSpellBookItemType(spellIndex, spellBank)
+                    local isSpell = (Enum and Enum.SpellBookItemType and itemType == Enum.SpellBookItemType.Spell) or itemType == 1 or itemType == "SPELL"
+                    local isPassive = C_SpellBook.IsSpellBookItemPassive and C_SpellBook.IsSpellBookItemPassive(spellIndex, spellBank)
+                    local sId = spellID or (isSpell and actionID)
                     
-                    -- Get the subtext (Rank string)
-                    local subtext = GetSpellSubtext(sId) or sRank
-                    local rankNum = ParseRank(subtext)
-                    
-                    if not self.highestSpells[cleanName] or rankNum > self.highestSpells[cleanName].rankNum then
-                        self.highestSpells[cleanName] = { 
-                            rankNum = rankNum, 
-                            spellId = sId, 
-                            index = i, 
-                            name = cleanName, 
-                            rankStr = subtext 
-                        }
+                    if isSpell and not isPassive and sId then
+                        local sName, sRank
+                        if C_SpellBook.GetSpellBookItemName then
+                            sName, sRank = C_SpellBook.GetSpellBookItemName(spellIndex, spellBank)
+                        end
+                        if not sName then
+                            sName = GetSpellInfoCompat(sId)
+                        end
+                        
+                        if sName then
+                            local cleanName = Trim(sName:gsub("%(Rank %d+%)", ""))
+                            local subtext = GetSpellSubtextCompat(sId)
+                            if subtext == "" and sRank then
+                                subtext = sRank
+                            end
+                            local rankNum = ParseRank(subtext)
+                            
+                            if not self.highestSpells[cleanName] or rankNum > self.highestSpells[cleanName].rankNum then
+                                self.highestSpells[cleanName] = {
+                                    rankNum = rankNum,
+                                    spellId = sId,
+                                    index = spellIndex,
+                                    name = cleanName,
+                                    rankStr = subtext
+                                }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    elseif _G.GetNumSpellTabs then
+        for tab = 1, GetNumSpellTabs() do
+            local _, _, offset, numSlots = GetSpellTabInfo(tab)
+            for i = offset + 1, offset + numSlots do
+                local sName, sRank = GetSpellBookItemName(i, BOOKTYPE_SPELL)
+                if sName then
+                    local sType, sId = GetSpellBookItemInfo(i, BOOKTYPE_SPELL)
+                    if sType == "SPELL" and not IsPassiveSpell(i, BOOKTYPE_SPELL) then
+                        local cleanName = Trim(sName:gsub("%(Rank %d+%)", ""))
+                        local subtext = GetSpellSubtextCompat(sId)
+                        if subtext == "" and sRank then
+                            subtext = sRank
+                        end
+                        local rankNum = ParseRank(subtext)
+                        
+                        if not self.highestSpells[cleanName] or rankNum > self.highestSpells[cleanName].rankNum then
+                            self.highestSpells[cleanName] = { 
+                                rankNum = rankNum, 
+                                spellId = sId, 
+                                index = i, 
+                                name = cleanName, 
+                                rankStr = subtext 
+                            }
+                        end
                     end
                 end
             end
@@ -105,12 +221,12 @@ function SpellCheck:ScanActionBars()
     local boundSpellIDs = {}
     local slotSpells = {}
     
-    for slot = 1, 120 do
+    for slot = 1, 180 do
         local actionType, id, subType = GetActionInfo(slot)
         if actionType == "spell" then
-            local spellName = GetSpellInfo(id)
+            local spellName = GetSpellInfoCompat(id)
             if spellName then
-                local spellRank = GetSpellSubtext(id)
+                local spellRank = GetSpellSubtextCompat(id)
                 boundSpellIDs[id] = true
                 table.insert(slotSpells, { slot = slot, name = Trim(spellName), rankStr = spellRank, id = id })
             end
@@ -130,12 +246,21 @@ function SpellCheck:ScanActionBars()
                     end
                 end
             end
+            if GetMacroSpell then
+                local macroSpell = GetMacroSpell(id)
+                if macroSpell then
+                    local mId = type(macroSpell) == "number" and macroSpell or nil
+                    if mId then
+                        boundSpellIDs[mId] = true
+                    end
+                end
+            end
         end
     end
     
     for sName, info in pairs(self.highestSpells) do
         if not boundSpellIDs[info.spellId] then
-            local isUsable, notEnoughMana = IsUsableSpell(info.spellId)
+            local isUsable, notEnoughMana = IsSpellUsableCompat(info.spellId)
             if isUsable or notEnoughMana or IsReagentSpell(sName) then
                 table.insert(self.unboundSpells, info)
             end
@@ -174,10 +299,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
             SpellCheck:ScanActionBars()
             self:UnregisterEvent("ADDON_LOADED")
         end
-    elseif event == "SPELLS_CHANGED" or event == "PLAYER_ENTERING_WORLD" or event == "ACTIVE_TALENT_GROUP_CHANGED" then
+    elseif event == "SPELLS_CHANGED" or event == "PLAYER_ENTERING_WORLD" or event == "ACTIVE_TALENT_GROUP_CHANGED" or event == "PLAYER_TALENT_UPDATE" or event == "TRAIT_CONFIG_UPDATED" then
         SpellCheck:ScanSpellbook()
         SpellCheck:ScanActionBars()
-    elseif event == "ACTIONBAR_SLOT_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_STEALTH" then
+    elseif event == "ACTIONBAR_SLOT_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_STEALTH" or event == "ACTIONBAR_PAGE_CHANGED" or event == "UPDATE_BONUS_ACTIONBAR" then
         SpellCheck:ScanActionBars()
     end
 end)
@@ -201,4 +326,19 @@ SlashCmdList["SPELLCHECK"] = function(msg)
     else
         if SpellCheck.ToggleUI then SpellCheck:ToggleUI() end
     end
+end
+
+function SpellCheck_OnAddonCompartmentClick()
+    SpellCheck:ToggleUI()
+end
+
+function SpellCheck_OnAddonCompartmentEnter(button)
+    GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+    GameTooltip:AddLine("SpellCheck")
+    GameTooltip:AddLine("Left-Click: Toggle Panel", 1, 1, 1)
+    GameTooltip:Show()
+end
+
+function SpellCheck_OnAddonCompartmentLeave()
+    GameTooltip:Hide()
 end

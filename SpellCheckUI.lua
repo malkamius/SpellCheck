@@ -57,7 +57,7 @@ local function UpgradeSpell(oldSlot, newSpellId, newSpellIndex)
         print("SpellCheck: Cannot upgrade spells while in combat.")
         return
     end
-    PickupSpellBookItem(newSpellIndex, BOOKTYPE_SPELL)
+    SpellCheck.PickupSpell(newSpellIndex, newSpellId)
     PlaceAction(oldSlot)
     ClearCursor()
     -- Force rescan so UI updates immediately
@@ -70,7 +70,7 @@ local function UpgradeAllSpells()
         return
     end
     for _, info in ipairs(SpellCheck.downrankedSpells) do
-        PickupSpellBookItem(info.highestRankInfo.index, BOOKTYPE_SPELL)
+        SpellCheck.PickupSpell(info.highestRankInfo.index, info.highestRankInfo.spellId)
         PlaceAction(info.slot)
         ClearCursor()
     end
@@ -119,19 +119,19 @@ local function UpdateList()
         f:Show()
         
         if CurrentTab == 1 then
-            local spellName, _, spellIcon = GetSpellInfo(info.highestRankInfo.spellId)
-            f.icon:SetTexture(spellIcon)
+            local spellName, _, spellIcon = SpellCheck.GetSpellInfo(info.highestRankInfo.spellId)
+            if spellIcon then f.icon:SetTexture(spellIcon) end
             f.nameText:SetText(info.name .. " (S" .. info.slot .. "): " .. (info.oldRankStr or "None") .. " -> " .. (info.newRankStr or "None"))
             f.actionBtn:SetText("Upgrade")
             f.actionBtn:SetScript("OnClick", function() UpgradeSpell(info.slot, info.highestRankInfo.spellId, info.highestRankInfo.index) end)
         else
-            local spellName, _, spellIcon = GetSpellInfo(info.spellId)
-            f.icon:SetTexture(spellIcon)
+            local spellName, _, spellIcon = SpellCheck.GetSpellInfo(info.spellId)
+            if spellIcon then f.icon:SetTexture(spellIcon) end
             f.nameText:SetText(info.name .. " " .. (info.rankStr or ""))
             f.actionBtn:SetText("Pickup")
             f.actionBtn:SetScript("OnClick", function() 
                 if InCombatLockdown() then return end
-                PickupSpellBookItem(info.index, BOOKTYPE_SPELL) 
+                SpellCheck.PickupSpell(info.index, info.spellId) 
             end)
         end
     end
@@ -170,28 +170,35 @@ function SpellCheck:InitUI()
     scrollFrame:SetScrollChild(scrollContent)
     scrollFrame.Content = scrollContent
     
-    PanelTemplates_SetNumTabs(MainFrame, 2)
-    PanelTemplates_UpdateTabs(MainFrame)
+    local tabTemplate = PanelTemplates_AnchorTabs and "PanelTabButtonTemplate" or "CharacterFrameTabButtonTemplate"
     
-    local tab1 = CreateFrame("Button", "SpellCheckMainFrameTab1", MainFrame, "CharacterFrameTabButtonTemplate")
+    local tab1 = CreateFrame("Button", "SpellCheckMainFrameTab1", MainFrame, tabTemplate)
     tab1:SetID(1)
     tab1:SetPoint("TOPLEFT", MainFrame, "BOTTOMLEFT", 10, 2)
     tab1:SetText("Downranked")
+    if PanelTemplates_TabResize then PanelTemplates_TabResize(tab1, 0) end
     tab1:SetScript("OnClick", function(self) 
         CurrentTab = 1
         PanelTemplates_SetTab(MainFrame, 1)
         UpdateList() 
     end)
     
-    local tab2 = CreateFrame("Button", "SpellCheckMainFrameTab2", MainFrame, "CharacterFrameTabButtonTemplate")
+    local tab2 = CreateFrame("Button", "SpellCheckMainFrameTab2", MainFrame, tabTemplate)
     tab2:SetID(2)
-    tab2:SetPoint("LEFT", tab1, "RIGHT", -16, 0)
     tab2:SetText("Unbound")
+    if PanelTemplates_TabResize then PanelTemplates_TabResize(tab2, 0) end
+    if not PanelTemplates_AnchorTabs then
+        tab2:SetPoint("LEFT", tab1, "RIGHT", -16, 0)
+    end
     tab2:SetScript("OnClick", function(self) 
         CurrentTab = 2
         PanelTemplates_SetTab(MainFrame, 2)
         UpdateList() 
     end)
+    
+    MainFrame.Tabs = { tab1, tab2 }
+    PanelTemplates_SetNumTabs(MainFrame, 2)
+    PanelTemplates_SetTab(MainFrame, 1)
     
     local upgradeAllBtn = CreateFrame("Button", nil, MainFrame, "UIPanelButtonTemplate")
     upgradeAllBtn:SetSize(100, 22)

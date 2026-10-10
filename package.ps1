@@ -8,12 +8,15 @@ $RepoRoot = (Get-Item $RepoRoot).FullName
 Write-Host "Repo Root: $RepoRoot" -ForegroundColor Cyan
 
 # 2. Find .toc to get Addon Name
-$tocFile = Get-ChildItem -Path $RepoRoot -Filter "*.toc" | Select-Object -First 1
+$tocFile = Get-ChildItem -Path $RepoRoot -Filter "*.toc" | Where-Object { $_.Name -notmatch "_[A-Za-z0-9]+\.toc$" } | Select-Object -First 1
+if (-not $tocFile) {
+    $tocFile = Get-ChildItem -Path $RepoRoot -Filter "*.toc" | Select-Object -First 1
+}
 if (-not $tocFile) {
     Write-Host "Error: No .toc file found in $RepoRoot" -ForegroundColor Red
     exit 1
 }
-$addonName = $tocFile.BaseName
+$addonName = $tocFile.BaseName -replace "_[A-Za-z0-9]+$", ""
 Write-Host "Addon Name: $addonName" -ForegroundColor Yellow
 
 # 3. Get Git Hash
@@ -33,16 +36,33 @@ $wowPathsFile = Join-Path $RepoRoot "wow_paths.json"
 $wowAddonsPath = $null
 
 if (Test-Path $wowPathsFile) {
-    $config = Get-Content $wowPathsFile -Raw | ConvertFrom-Json
-    if ($config.wowAddonPath -and (Test-Path $config.wowAddonPath)) {
-        $wowAddonsPath = $config.wowAddonPath
+    try {
+        $config = Get-Content $wowPathsFile -Raw | ConvertFrom-Json
+        if ($config.wowAddonPath) {
+            foreach ($p in @($config.wowAddonPath)) {
+                if (Test-Path $p) {
+                    $wowAddonsPath = $p
+                    break
+                }
+            }
+        }
+    } catch {
+        Write-Host "Could not parse wow_paths.json: $_" -ForegroundColor Yellow
     }
 }
 
 if (-not $wowAddonsPath) {
-    $defaultPath = "C:\Program Files (x86)\World of Warcraft\_anniversary_\Interface\AddOns"
-    if (Test-Path $defaultPath) {
-        $wowAddonsPath = $defaultPath
+    $fallbackPaths = @(
+        "G:\Battle.net\World of Warcraft\_classic_beta_\Interface\AddOns",
+        "G:\Battle.net\World of Warcraft\_anniversary_\Interface\AddOns",
+        "C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns",
+        "C:\Program Files (x86)\World of Warcraft\_anniversary_\Interface\AddOns"
+    )
+    foreach ($p in $fallbackPaths) {
+        if (Test-Path $p) {
+            $wowAddonsPath = $p
+            break
+        }
     }
 }
 
