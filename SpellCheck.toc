@@ -3,6 +3,7 @@
 ## Notes: Checks action bars for downranked and unbound spells.
 ## Author: Gemini
 ## Version: 1.1.0
+## X-Curse-Project-ID: 1519888
 ## SavedVariables: SpellCheckDB
 ## AddonCompartmentFunc: SpellCheck_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: SpellCheck_OnAddonCompartmentEnter
